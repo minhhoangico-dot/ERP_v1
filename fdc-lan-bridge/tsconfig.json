@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "lib": ["es2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "src/check*.ts",
+    "src/search*.ts",
+    "src/find*.ts",
+    "src/explore*.ts",
+    "src/debug_*.ts",
+    "src/test_*.ts",
+    "src/verify_*.ts",
+    "src/list_*.ts",
+    "src/query_*.ts"
+  ]
+}
