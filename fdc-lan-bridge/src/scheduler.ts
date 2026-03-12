@@ -13,6 +13,7 @@ import { updateHealthJob } from "./jobs/updateHealth";
 import { syncMedicineImportsJob } from "./jobs/syncMedicineImports";
 import { detectAnomaliesJob } from "./jobs/detectAnomalies";
 import { syncSupplyConsumptionJob } from "./jobs/syncSupplyConsumption";
+import { syncSupplyMonthlyStatsJob } from "./jobs/syncSupplyMonthlyStats";
 
 export function startScheduler() {
     logger.info("Initializing Node Cron Scheduler...");
@@ -55,5 +56,8 @@ export function startScheduler() {
 
         logger.info("Running scheduled syncSupplyConsumptionJob...");
         await syncSupplyConsumptionJob();
+
+        logger.info("Running scheduled syncSupplyMonthlyStatsJob...");
+        await syncSupplyMonthlyStatsJob();
     });
 }

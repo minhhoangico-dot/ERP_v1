@@ -9,6 +9,7 @@ export type SyncType =
     | "scanMisaPhieuchi"
     | "syncMisaSupplies"
     | "syncSupplyConsumption"
+    | "syncSupplyMonthlyStats"
     | "syncAttendance";
 
 export type SyncStatus = "completed" | "failed";

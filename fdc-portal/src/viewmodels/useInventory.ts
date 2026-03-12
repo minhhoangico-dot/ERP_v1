@@ -22,41 +22,65 @@ export function useInventory(moduleType: 'pharmacy' | 'inventory' | 'all' = 'all
   const [itemSnapshots, setItemSnapshots] = useState<ItemSnapshot[]>([]);
   const [isLoadingItemSnapshots, setIsLoadingItemSnapshots] = useState(false);
   const [isLoadingSnapshotHistory, setIsLoadingSnapshotHistory] = useState(false);
-  const [chartRange, setChartRange] = useState<'1m' | '3m' | '6m' | '1y'>('1m');
 
-  // Fetch today's inventory
+  // Fetch inventory, preferring today's snapshot but falling back to latest available date
   const fetchInventory = useCallback(async () => {
     const todayDate = new Date().toISOString().split('T')[0];
 
-    let allData: any[] = [];
-    let from = 0;
-    const PAGE_SIZE = 1000;
-    let hasMore = true;
+    const loadForDate = async (snapshotDate: string) => {
+      let allData: any[] = [];
+      let from = 0;
+      const PAGE_SIZE = 1000;
+      let hasMore = true;
 
-    while (hasMore) {
-      let query = supabase
+      while (hasMore) {
+        let query = supabase
+          .from('fdc_inventory_snapshots')
+          .select('*')
+          .eq('snapshot_date', snapshotDate)
+          .order('name')
+          .range(from, from + PAGE_SIZE - 1);
+
+        if (moduleType === 'pharmacy') {
+          query = query.not('his_medicineid', 'is', null).not('his_medicineid', 'like', 'misa_%');
+        } else if (moduleType === 'inventory') {
+          query = query.or('his_medicineid.is.null,his_medicineid.like.misa_%');
+        }
+
+        const { data, error } = await query;
+        if (error) {
+          console.error('[DEBUG] fetchInventory error:', error);
+        }
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          from += PAGE_SIZE;
+          hasMore = data.length === PAGE_SIZE;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      return allData;
+    };
+
+    // 1. Try today's snapshot
+    let allData = await loadForDate(todayDate);
+
+    // 2. If nothing for today (common when sync job hasn't run yet), fall back to latest available date
+    if (allData.length === 0 && moduleType === 'inventory') {
+      const { data: latest, error: latestError } = await supabase
         .from('fdc_inventory_snapshots')
-        .select('*')
-        .eq('snapshot_date', todayDate)
-        .order('name')
-        .range(from, from + PAGE_SIZE - 1);
+        .select('snapshot_date')
+        .order('snapshot_date', { ascending: false })
+        .limit(1);
 
-      if (moduleType === 'pharmacy') {
-        query = query.not('his_medicineid', 'is', null).not('his_medicineid', 'like', 'misa_%');
-      } else if (moduleType === 'inventory') {
-        query = query.or('his_medicineid.is.null,his_medicineid.like.misa_%');
-      }
-
-      const { data, error } = await query;
-      if (error) {
-        console.error('[DEBUG] fetchInventory error:', error);
-      }
-      if (data && data.length > 0) {
-        allData = [...allData, ...data];
-        from += PAGE_SIZE;
-        hasMore = data.length === PAGE_SIZE;
-      } else {
-        hasMore = false;
+      if (latestError) {
+        console.error('[DEBUG] fetchInventory latest snapshot_date error:', latestError);
+      } else if (latest && latest.length > 0) {
+        const latestDate = latest[0].snapshot_date as string;
+        if (latestDate && latestDate !== todayDate) {
+          allData = await loadForDate(latestDate);
+        }
       }
     }
 
@@ -76,6 +100,8 @@ export function useInventory(moduleType: 'pharmacy' | 'inventory' | 'all' = 'all
         unitPrice: item.unit_price || 0,
         medicineCode: item.medicine_code
       })));
+    } else {
+      setInventory([]);
     }
   }, [moduleType]);
 
@@ -98,165 +124,41 @@ export function useInventory(moduleType: 'pharmacy' | 'inventory' | 'all' = 'all
     }
   }, []);
 
-  // Fetch snapshot history for overall charts, including consumption & patient volume
+  // Fetch 30-day snapshot history for overall charts
   const fetchSnapshotHistory = useCallback(async () => {
     setIsLoadingSnapshotHistory(true);
     try {
-      const rangeDays =
-        chartRange === '1m' ? 30 :
-        chartRange === '3m' ? 90 :
-        chartRange === '6m' ? 180 : 365;
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const cutoffDate = thirtyDaysAgo.toISOString().split('T')[0];
 
-      const today = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - rangeDays);
-
-      const cutoffDate = start.toISOString().split('T')[0];
-      const todayDate = today.toISOString().split('T')[0];
-
-      const lastYearStart = new Date(start);
-      lastYearStart.setFullYear(lastYearStart.getFullYear() - 1);
-      const lastYearEnd = new Date(today);
-      lastYearEnd.setFullYear(lastYearEnd.getFullYear() - 1);
-
-      const lastYearCutoffDate = lastYearStart.toISOString().split('T')[0];
-      const lastYearEndDate = lastYearEnd.toISOString().split('T')[0];
-
-      // Inventory daily aggregate
-      const { data: inventoryRows, error: inventoryError } = await supabase
+      const { data, error } = await supabase
         .from('fdc_inventory_daily_value')
         .select('snapshot_date, total_stock, total_value')
         .gte('snapshot_date', cutoffDate)
         .eq('module_type', moduleType === 'pharmacy' ? 'pharmacy' : 'inventory')
         .order('snapshot_date', { ascending: true });
 
-      if (inventoryError) {
-        console.error('[DEBUG] fetchSnapshotHistory inventory error:', inventoryError);
+      if (error) {
+        console.error('[DEBUG] fetchSnapshotHistory error:', error);
       }
 
-      // Consumption current period
-      const { data: consumptionRows, error: consumptionError } = await supabase
-        .from('fdc_supply_consumption_daily')
-        .select('report_date, outward_amount')
-        .gte('report_date', cutoffDate)
-        .lte('report_date', todayDate);
-
-      if (consumptionError) {
-        console.error('[DEBUG] fetchSnapshotHistory consumption error:', consumptionError);
+      if (data && data.length > 0) {
+        const result = data
+          .map((row: any) => ({
+            date: row.snapshot_date,
+            totalStock: Number(row.total_stock) || 0,
+            totalValue: Number(row.total_value) || 0,
+          }))
+          .slice(-30); // safety cap
+        setSnapshotHistory(result);
+      } else {
+        setSnapshotHistory([]);
       }
-
-      // Consumption same period last year (aligned to current year)
-      const { data: consumptionPrevRows, error: consumptionPrevError } = await supabase
-        .from('fdc_supply_consumption_daily')
-        .select('report_date, outward_amount')
-        .gte('report_date', lastYearCutoffDate)
-        .lte('report_date', lastYearEndDate);
-
-      if (consumptionPrevError) {
-        console.error('[DEBUG] fetchSnapshotHistory consumption last year error:', consumptionPrevError);
-      }
-
-      // Patient volume current period
-      const { data: patientRows, error: patientError } = await supabase
-        .from('fdc_patient_volume_daily')
-        .select('report_date, total_treatments')
-        .gte('report_date', cutoffDate)
-        .lte('report_date', todayDate);
-
-      if (patientError) {
-        console.error('[DEBUG] fetchSnapshotHistory patient volume error:', patientError);
-      }
-
-      const consumptionMap: Record<string, number> = {};
-      (consumptionRows || []).forEach((row: any) => {
-        const key = row.report_date;
-        const value = Number(row.outward_amount) || 0;
-        consumptionMap[key] = (consumptionMap[key] || 0) + value;
-      });
-
-      const consumptionLastYearMap: Record<string, number> = {};
-      (consumptionPrevRows || []).forEach((row: any) => {
-        const original = new Date(row.report_date);
-        original.setFullYear(original.getFullYear() + 1);
-        const aligned = original.toISOString().split('T')[0];
-        const value = Number(row.outward_amount) || 0;
-        consumptionLastYearMap[aligned] = (consumptionLastYearMap[aligned] || 0) + value;
-      });
-
-      const patientMap: Record<string, number> = {};
-      (patientRows || []).forEach((row: any) => {
-        const key = row.report_date;
-        const value = Number(row.total_treatments) || 0;
-        patientMap[key] = (patientMap[key] || 0) + value;
-      });
-
-      const byDate: Record<string, SnapshotHistory> = {};
-
-      (inventoryRows || []).forEach((row: any) => {
-        const date = row.snapshot_date;
-        byDate[date] = {
-          date,
-          totalStock: Number(row.total_stock) || 0,
-          totalValue: Number(row.total_value) || 0,
-          consumption: 0,
-          consumptionLastYear: 0,
-          patientVolume: 0,
-        };
-      });
-
-      Object.keys(consumptionMap).forEach((date) => {
-        if (!byDate[date]) {
-          byDate[date] = {
-            date,
-            totalStock: 0,
-            totalValue: 0,
-            consumption: 0,
-            consumptionLastYear: 0,
-            patientVolume: 0,
-          };
-        }
-      });
-
-      Object.keys(consumptionLastYearMap).forEach((date) => {
-        if (!byDate[date]) {
-          byDate[date] = {
-            date,
-            totalStock: 0,
-            totalValue: 0,
-            consumption: 0,
-            consumptionLastYear: 0,
-            patientVolume: 0,
-          };
-        }
-      });
-
-      Object.keys(patientMap).forEach((date) => {
-        if (!byDate[date]) {
-          byDate[date] = {
-            date,
-            totalStock: 0,
-            totalValue: 0,
-            consumption: 0,
-            consumptionLastYear: 0,
-            patientVolume: 0,
-          };
-        }
-      });
-
-      Object.keys(byDate).forEach((date) => {
-        byDate[date].consumption = consumptionMap[date] || 0;
-        byDate[date].consumptionLastYear = consumptionLastYearMap[date] || 0;
-        byDate[date].patientVolume = patientMap[date] || 0;
-      });
-
-      const result = Object.values(byDate)
-        .sort((a, b) => a.date.localeCompare(b.date));
-
-      setSnapshotHistory(result);
     } finally {
       setIsLoadingSnapshotHistory(false);
     }
-  }, [moduleType, chartRange]);
+  }, [moduleType]);
 
   // Fetch per-item snapshot history (when selecting an item)
   const fetchItemSnapshots = useCallback(async (itemName: string, warehouse: string) => {
@@ -432,8 +334,6 @@ export function useInventory(moduleType: 'pharmacy' | 'inventory' | 'all' = 'all
     isLoadingItemSnapshots,
     isLoadingSnapshotHistory,
     topMaterials,
-    chartRange,
-    setChartRange,
     stats: {
       totalItems,
       activeAnomaliesCount,

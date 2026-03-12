@@ -33,9 +33,6 @@ export interface SnapshotHistory {
   date: string;
   totalStock: number;
   totalValue: number;
-  consumption: number;
-  consumptionLastYear: number;
-  patientVolume: number;
 }
 
 export interface ItemSnapshot {
@@ -80,6 +77,16 @@ export interface StocktakeItem {
   note?: string;
   checked_by?: string;
   checked_at?: string;
+}
+
+// Supply chart types
+export type SupplyTimeRange = '1M' | '3M' | '6M' | '1Y';
+
+export interface SupplyChartPoint {
+  period: string;
+  consumption: number;
+  consumptionLY: number;
+  patientVolume: number;
 }
 
 // Supply consumption types
