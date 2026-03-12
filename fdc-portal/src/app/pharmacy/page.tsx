@@ -30,6 +30,7 @@ import {
   Bar,
   AreaChart,
   Area,
+  ComposedChart,
 } from "recharts";
 
 const formatCurrency = (value: number) => {
@@ -71,6 +72,8 @@ export default function PharmacyPage() {
     isLoadingItemSnapshots,
     topMaterials,
     stats,
+    chartRange,
+    setChartRange,
   } = useInventory('pharmacy');
 
   // Import history state for side panel
@@ -297,17 +300,39 @@ export default function PharmacyPage() {
 
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Chart 1: Stock Value Trend 30 days */}
+            {/* Chart 1: Stock Value, Consumption & Patients */}
             <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-              <h3 className="text-base font-bold text-gray-900 mb-4">
-                Biến động giá trị tồn kho (30 ngày)
-              </h3>
+              <div className="flex items-center justify-between mb-4 gap-3">
+                <h3 className="text-base font-bold text-gray-900">
+                  Biến động giá trị tồn kho
+                </h3>
+                <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1">
+                  {[
+                    { key: '1m' as const, label: '1T' },
+                    { key: '3m' as const, label: '3T' },
+                    { key: '6m' as const, label: '6T' },
+                    { key: '1y' as const, label: '1N' },
+                  ].map(range => (
+                    <button
+                      key={range.key}
+                      onClick={() => setChartRange(range.key)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
+                        chartRange === range.key
+                          ? "bg-white text-indigo-600 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {range.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="h-72">
                 {snapshotHistory.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={snapshotHistory} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
+                    <ComposedChart data={snapshotHistory} margin={{ top: 5, right: 20, left: -10, bottom: 0 }}>
                       <defs>
-                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                        <linearGradient id="colorPharmacyValue" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
                           <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                         </linearGradient>
@@ -318,23 +343,76 @@ export default function PharmacyPage() {
                         tickFormatter={(val) => {
                           try { return format(parseISO(val), "dd/MM"); } catch { return val; }
                         }}
-                        axisLine={false} tickLine={false}
+                        axisLine={false}
+                        tickLine={false}
                         tick={{ fontSize: 11, fill: "#6b7280" }}
-                        dy={10}
                       />
                       <YAxis
-                        axisLine={false} tickLine={false}
+                        yAxisId="left"
+                        axisLine={false}
+                        tickLine={false}
                         tick={{ fontSize: 11, fill: "#6b7280" }}
                         tickFormatter={formatCompact}
-                        domain={['dataMin * 0.95', 'dataMax * 1.05']}
+                      />
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: "#6b7280" }}
                       />
                       <Tooltip
                         contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
                         labelFormatter={(val) => { try { return format(parseISO(val as string), "dd/MM/yyyy"); } catch { return val as string; } }}
-                        formatter={(value: number) => [formatCurrency(value), "Giá trị tồn"]}
+                        formatter={(value: number, name: string) => {
+                          if (name === 'patientVolume') {
+                            return [value, "Bệnh nhân"];
+                          }
+                          return [formatCurrency(value), name === 'totalValue'
+                            ? "Giá trị tồn"
+                            : name === 'consumption'
+                              ? "Tiêu hao kỳ này"
+                              : "Tiêu hao cùng kỳ năm ngoái"];
+                        }}
                       />
-                      <Area type="monotone" dataKey="totalValue" stroke="#6366f1" strokeWidth={2} fill="url(#colorValue)" />
-                    </AreaChart>
+                      <ComposedChart />
+                      <Area
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="totalValue"
+                        name="Giá trị tồn"
+                        stroke="#6366f1"
+                        strokeWidth={2}
+                        fill="url(#colorPharmacyValue)"
+                      />
+                      <Line
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="consumptionLastYear"
+                        name="Tiêu hao cùng kỳ năm ngoái"
+                        stroke="#9ca3af"
+                        strokeDasharray="4 4"
+                        dot={false}
+                        strokeWidth={2}
+                      />
+                      <Line
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="consumption"
+                        name="Tiêu hao kỳ này"
+                        stroke="#f97316"
+                        dot={false}
+                        strokeWidth={2}
+                      />
+                      <Bar
+                        yAxisId="right"
+                        dataKey="patientVolume"
+                        name="Bệnh nhân"
+                        fill="#22c55e"
+                        barSize={16}
+                        radius={[4, 4, 0, 0]}
+                      />
+                    </ComposedChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-full flex items-center justify-center text-gray-400 text-sm">

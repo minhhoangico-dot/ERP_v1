@@ -58,22 +58,32 @@ export async function syncInventoryJob() {
 
         // Prepare batches for upsert
         const batchSize = 100;
+        let totalStockAll = 0;
+        let totalValueAll = 0;
+
         for (let i = 0; i < items.length; i += batchSize) {
-            const batch = items.slice(i, i + batchSize).map(item => ({
-                his_medicineid: item.his_medicineid,
-                medicine_code: item.medicine_code,
-                name: item.name,
-                category: item.category || 'Khác', // Example static category
-                warehouse: item.warehouse_name || 'Kho Tổng',
-                current_stock: Number(item.current_stock),
-                approved_export: Number(item.approved_export),
-                unit: item.unit,
-                status: Number(item.current_stock) > 0 ? 'in_stock' : 'out_of_stock',
-                snapshot_date: snapshotDate,
-                batch_number: item.batch_number,
-                expiry_date: item.expiry_date,
-                unit_price: item.unit_price ? Number(item.unit_price) : 0
-            }));
+            const batch = items.slice(i, i + batchSize).map(item => {
+                const currentStock = Number(item.current_stock) || 0;
+                const unitPrice = item.unit_price ? Number(item.unit_price) : 0;
+                totalStockAll += currentStock;
+                totalValueAll += currentStock * unitPrice;
+
+                return {
+                    his_medicineid: item.his_medicineid,
+                    medicine_code: item.medicine_code,
+                    name: item.name,
+                    category: item.category || 'Khác', // Example static category
+                    warehouse: item.warehouse_name || 'Kho Tổng',
+                    current_stock: currentStock,
+                    approved_export: Number(item.approved_export),
+                    unit: item.unit,
+                    status: currentStock > 0 ? 'in_stock' : 'out_of_stock',
+                    snapshot_date: snapshotDate,
+                    batch_number: item.batch_number,
+                    expiry_date: item.expiry_date,
+                    unit_price: unitPrice,
+                };
+            });
 
             const { error } = await supabase
                 .from('fdc_inventory_snapshots')
@@ -84,6 +94,23 @@ export async function syncInventoryJob() {
             } else {
                 recordsSynced += batch.length;
             }
+        }
+
+        // Upsert daily aggregate value for inventory module
+        const { error: aggError } = await supabase
+            .from('fdc_inventory_daily_value')
+            .upsert(
+                [{
+                    snapshot_date: snapshotDate,
+                    module_type: 'inventory',
+                    total_stock: totalStockAll,
+                    total_value: totalValueAll,
+                }],
+                { onConflict: 'snapshot_date,module_type' },
+            );
+
+        if (aggError) {
+            logger.error("Failed to upsert fdc_inventory_daily_value aggregate", aggError);
         }
 
         // Clean up snapshots older than 90 days

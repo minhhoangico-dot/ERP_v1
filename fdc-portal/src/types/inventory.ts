@@ -33,6 +33,9 @@ export interface SnapshotHistory {
   date: string;
   totalStock: number;
   totalValue: number;
+  consumption: number;
+  consumptionLastYear: number;
+  patientVolume: number;
 }
 
 export interface ItemSnapshot {

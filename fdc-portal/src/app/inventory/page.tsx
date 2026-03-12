@@ -34,6 +34,7 @@ import {
   Bar,
   AreaChart,
   Area,
+  ComposedChart,
 } from "recharts";
 
 const formatCurrency = (value: number) =>
@@ -69,6 +70,9 @@ export default function InventoryPage() {
     snapshotHistory,
     topMaterials,
     stats,
+    isLoadingSnapshotHistory,
+    chartRange,
+    setChartRange,
   } = useInventory("inventory");
 
   const [activeTab, setActiveTab] = useState<TabType>("overview");
@@ -302,25 +306,129 @@ export default function InventoryPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* 30-day Value Trend */}
+            {/* Value & Consumption Trend */}
             <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-              <h3 className="text-base font-bold text-gray-900 mb-4">Biến động giá trị tồn kho (30 ngày)</h3>
+              <div className="flex items-center justify-between mb-4 gap-3">
+                <h3 className="text-base font-bold text-gray-900">
+                  Biến động giá trị tồn kho
+                </h3>
+                <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1">
+                  {[
+                    { key: '1m' as const, label: '1T' },
+                    { key: '3m' as const, label: '3T' },
+                    { key: '6m' as const, label: '6T' },
+                    { key: '1y' as const, label: '1N' },
+                  ].map(range => (
+                    <button
+                      key={range.key}
+                      onClick={() => setChartRange(range.key)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
+                        chartRange === range.key
+                          ? "bg-white text-indigo-600 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {range.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={snapshotHistory} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                    <XAxis dataKey="date" tickFormatter={v => { try { return format(parseISO(v), "dd/MM"); } catch { return v; } }} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#6b7280" }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#6b7280" }} tickFormatter={formatCompact} domain={["dataMin * 0.95", "dataMax * 1.05"]} />
-                    <Tooltip contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }} formatter={(v: number) => [formatCurrency(v), "Giá trị"]} labelFormatter={v => format(parseISO(v as string), "dd/MM/yyyy")} />
-                    <Area type="monotone" dataKey="totalValue" stroke="#6366f1" fill="url(#colorValue)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {isLoadingSnapshotHistory ? (
+                  <div className="w-full h-full rounded-xl bg-gray-50 animate-pulse" />
+                ) : snapshotHistory.length === 0 ? (
+                  <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">
+                    Chưa có dữ liệu trong khoảng thời gian đã chọn.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={snapshotHistory} margin={{ top: 5, right: 20, left: -10, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="colorInventoryValue" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={v => {
+                          try { return format(parseISO(v), "dd/MM"); } catch { return v; }
+                        }}
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: "#6b7280" }}
+                      />
+                      <YAxis
+                        yAxisId="left"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: "#6b7280" }}
+                        tickFormatter={formatCompact}
+                      />
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: "#6b7280" }}
+                      />
+                      <Tooltip
+                        contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+                        labelFormatter={v => {
+                          try { return format(parseISO(v as string), "dd/MM/yyyy"); } catch { return v as string; }
+                        }}
+                        formatter={(value: number, name: string) => {
+                          if (name === 'patientVolume') {
+                            return [value, "Bệnh nhân"];
+                          }
+                          return [formatCurrency(value), name === 'totalValue'
+                            ? "Giá trị tồn"
+                            : name === 'consumption'
+                              ? "Tiêu hao kỳ này"
+                              : "Tiêu hao cùng kỳ năm ngoái"];
+                        }}
+                      />
+                      <Legend />
+                      <Area
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="totalValue"
+                        name="Giá trị tồn"
+                        stroke="#6366f1"
+                        fill="url(#colorInventoryValue)"
+                        strokeWidth={2}
+                      />
+                      <Line
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="consumptionLastYear"
+                        name="Tiêu hao cùng kỳ năm ngoái"
+                        stroke="#9ca3af"
+                        strokeDasharray="4 4"
+                        dot={false}
+                        strokeWidth={2}
+                      />
+                      <Line
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="consumption"
+                        name="Tiêu hao kỳ này"
+                        stroke="#f97316"
+                        dot={false}
+                        strokeWidth={2}
+                      />
+                      <Bar
+                        yAxisId="right"
+                        dataKey="patientVolume"
+                        name="Bệnh nhân"
+                        fill="#22c55e"
+                        barSize={16}
+                        radius={[4, 4, 0, 0]}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
 
