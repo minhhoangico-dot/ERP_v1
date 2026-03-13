@@ -67,16 +67,32 @@ export async function backfillMisaInventoryDailyValueJob(days = 365) {
           ISNULL(daily.delta_amt, 0) AS delta_amt
         FROM dates dt
         LEFT JOIN daily ON daily.d = dt.d
+      ),
+      cumulative AS (
+        SELECT
+          f.d,
+          CAST(ISNULL(b.base_qty, 0) + ISNULL(f.delta_qty, 0) AS decimal(18, 2)) AS total_stock,
+          CAST(ISNULL(b.base_amt, 0) + ISNULL(f.delta_amt, 0) AS decimal(18, 2)) AS total_value
+        FROM filled f
+        CROSS JOIN base b
+        WHERE f.d = CAST(@startDate AS date)
+
+        UNION ALL
+
+        SELECT
+          f2.d,
+          CAST(c.total_stock + ISNULL(f2.delta_qty, 0) AS decimal(18, 2)) AS total_stock,
+          CAST(c.total_value + ISNULL(f2.delta_amt, 0) AS decimal(18, 2)) AS total_value
+        FROM cumulative c
+        JOIN filled f2 ON f2.d = DATEADD(DAY, 1, c.d)
       )
       SELECT
-        f.d AS snapshot_date,
-        CAST((SELECT ISNULL(base_qty, 0) FROM base) +
-          SUM(f.delta_qty) OVER (ORDER BY f.d ROWS UNBOUNDED PRECEDING) AS decimal(18, 2)) AS total_stock,
-        CAST((SELECT ISNULL(base_amt, 0) FROM base) +
-          SUM(f.delta_amt) OVER (ORDER BY f.d ROWS UNBOUNDED PRECEDING) AS decimal(18, 2)) AS total_value
-      FROM filled f
-      ORDER BY f.d
-      OPTION (MAXRECURSION 400);
+        d AS snapshot_date,
+        total_stock,
+        total_value
+      FROM cumulative
+      ORDER BY d
+      OPTION (MAXRECURSION 4000);
     `);
 
     const rows = result.recordset as Array<{
