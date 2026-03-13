@@ -23,6 +23,23 @@ export default function ValuationPage() {
     const [importHistory, setImportHistory] = useState<any[]>([]);
     const [isFetchingHistory, setIsFetchingHistory] = useState(false);
 
+    type SortField = "name" | "stock" | "totalValue";
+    type SortDirection = "asc" | "desc";
+
+    const [sortField, setSortField] = useState<SortField>("totalValue");
+    const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
+    const toggleSort = (field: SortField) => {
+        setSortField((currentField) => {
+            if (currentField === field) {
+                setSortDirection((dir) => (dir === "asc" ? "desc" : "asc"));
+                return currentField;
+            }
+            setSortDirection(field === "name" ? "asc" : "desc");
+            return field;
+        });
+    };
+
     React.useEffect(() => {
         const fetchHistory = async () => {
             if (!selectedItem?.medicineCode) {
@@ -54,8 +71,34 @@ export default function ValuationPage() {
                 price,
                 totalValue
             };
-        }).sort((a, b) => b.totalValue - a.totalValue); // Sort highest value first
+        });
     }, [filteredInventory]);
+
+    const sortedItems = useMemo(() => {
+        const items = [...itemsWithValue];
+
+        items.sort((a, b) => {
+            let aVal: string | number = 0;
+            let bVal: string | number = 0;
+
+            if (sortField === "name") {
+                aVal = (a.name || "").toString().toLowerCase();
+                bVal = (b.name || "").toString().toLowerCase();
+            } else if (sortField === "stock") {
+                aVal = a.currentStock || 0;
+                bVal = b.currentStock || 0;
+            } else {
+                aVal = a.totalValue || 0;
+                bVal = b.totalValue || 0;
+            }
+
+            if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
+            if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
+            return 0;
+        });
+
+        return items;
+    }, [itemsWithValue, sortField, sortDirection]);
 
     const totalFilteredValue = useMemo(() => itemsWithValue.reduce((sum, item) => sum + item.totalValue, 0), [itemsWithValue]);
 
@@ -148,17 +191,56 @@ export default function ValuationPage() {
                     <div className="flex-1 overflow-auto">
                         <table className="w-full text-left border-collapse">
                             <thead className="bg-gray-50 sticky top-0 z-10">
-                                <tr>
-                                    <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Mã hàng</th>
-                                    <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Tên hàng</th>
-                                    <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">Kho</th>
-                                    <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Tồn kho</th>
-                                    <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Đơn giá ước tính</th>
-                                    <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right font-bold">Thành tiền</th>
-                                </tr>
+                            <tr>
+                                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Mã hàng</th>
+                                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleSort("name")}
+                                        className="flex items-center gap-1"
+                                    >
+                                        <span>Tên hàng</span>
+                                        {sortField === "name" && (
+                                            <span className="text-[10px] text-gray-400">
+                                                {sortDirection === "asc" ? "▲" : "▼"}
+                                            </span>
+                                        )}
+                                    </button>
+                                </th>
+                                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">Kho</th>
+                                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleSort("stock")}
+                                        className="flex items-center gap-1 w-full justify-end"
+                                    >
+                                        <span>Tồn kho</span>
+                                        {sortField === "stock" && (
+                                            <span className="text-[10px] text-gray-400">
+                                                {sortDirection === "asc" ? "▲" : "▼"}
+                                            </span>
+                                        )}
+                                    </button>
+                                </th>
+                                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Đơn giá ước tính</th>
+                                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right font-bold">
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleSort("totalValue")}
+                                        className="flex items-center gap-1 w-full justify-end"
+                                    >
+                                        <span>Thành tiền</span>
+                                        {sortField === "totalValue" && (
+                                            <span className="text-[10px] text-gray-400">
+                                                {sortDirection === "asc" ? "▲" : "▼"}
+                                            </span>
+                                        )}
+                                    </button>
+                                </th>
+                            </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {itemsWithValue.map((item) => (
+                            {sortedItems.map((item) => (
                                     <tr
                                         key={item.id}
                                         onClick={() => setSelectedItem(item)}
