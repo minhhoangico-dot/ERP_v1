@@ -14,6 +14,7 @@ import { syncMedicineImportsJob } from "./jobs/syncMedicineImports";
 import { detectAnomaliesJob } from "./jobs/detectAnomalies";
 import { syncSupplyConsumptionJob } from "./jobs/syncSupplyConsumption";
 import { syncSupplyMonthlyStatsJob } from "./jobs/syncSupplyMonthlyStats";
+import { backfillHisPharmacyInventoryDailyValueJob } from "./jobs/backfillHisPharmacyInventoryDailyValue";
 
 export function startScheduler() {
     logger.info("Initializing Node Cron Scheduler...");
@@ -59,5 +60,8 @@ export function startScheduler() {
 
         logger.info("Running scheduled syncSupplyMonthlyStatsJob...");
         await syncSupplyMonthlyStatsJob();
+
+        logger.info("Running scheduled backfillHisPharmacyInventoryDailyValueJob (pharmacy, 365 days)...");
+        await backfillHisPharmacyInventoryDailyValueJob(365);
     });
 }

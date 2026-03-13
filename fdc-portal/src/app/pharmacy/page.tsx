@@ -297,10 +297,10 @@ export default function PharmacyPage() {
 
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Chart 1: Stock Value Trend 30 days */}
+            {/* Chart 1: Stock Value Trend - default 1 year (weekly aggregate) */}
             <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
               <h3 className="text-base font-bold text-gray-900 mb-4">
-                Biến động giá trị tồn kho (30 ngày)
+                Biến động giá trị tồn kho (1 năm)
               </h3>
               <div className="h-72">
                 {snapshotHistory.length > 0 ? (
@@ -338,7 +338,7 @@ export default function PharmacyPage() {
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-                    Chưa có dữ liệu lịch sử. Hệ thống sẽ bắt đầu thu thập sau 1-2 ngày.
+                    Chưa có dữ liệu trong 1 năm gần nhất. Hệ thống sẽ bắt đầu thu thập sau 1-2 ngày.
                   </div>
                 )}
               </div>

@@ -15,7 +15,7 @@ export async function syncSupplyConsumptionJob() {
             await misaPool.connect();
         }
 
-        // 1. Get Outward transactions from MISA for the last 30 days (for initial backfill) or daily
+        // 1. Get Outward transactions from MISA for the last 93 days (for 3M chart density)
         const request = new sql.Request(misaPool);
         const result = await request.query(`
             SELECT 
@@ -27,7 +27,7 @@ export async function syncSupplyConsumptionJob() {
                 SUM(ISNULL(l.OutwardAmount, 0)) as outward_amount
             FROM InventoryLedger l
             WHERE l.AccountNumber LIKE '152%'
-              AND l.PostedDate >= DATEADD(DAY, -30, GETDATE())
+              AND l.PostedDate >= DATEADD(DAY, -93, GETDATE())
               AND l.OutwardQuantity > 0
             GROUP BY CONVERT(VARCHAR(10), l.PostedDate, 23), l.InventoryItemCode
         `);

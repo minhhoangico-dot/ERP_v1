@@ -66,13 +66,20 @@ export function useInventory(moduleType: 'pharmacy' | 'inventory' | 'all' = 'all
     // 1. Try today's snapshot
     let allData = await loadForDate(todayDate);
 
-    // 2. If nothing for today (common when sync job hasn't run yet), fall back to latest available date
-    if (allData.length === 0 && moduleType === 'inventory') {
-      const { data: latest, error: latestError } = await supabase
+    // 2. If nothing for today, fall back to the latest date that actually has matching data
+    if (allData.length === 0) {
+      let fallbackQuery = supabase
         .from('fdc_inventory_snapshots')
         .select('snapshot_date')
-        .order('snapshot_date', { ascending: false })
-        .limit(1);
+        .order('snapshot_date', { ascending: false });
+
+      if (moduleType === 'inventory') {
+        fallbackQuery = fallbackQuery.or('his_medicineid.is.null,his_medicineid.like.misa_%');
+      } else if (moduleType === 'pharmacy') {
+        fallbackQuery = fallbackQuery.not('his_medicineid', 'is', null).not('his_medicineid', 'like', 'misa_%');
+      }
+
+      const { data: latest, error: latestError } = await fallbackQuery.limit(1);
 
       if (latestError) {
         console.error('[DEBUG] fetchInventory latest snapshot_date error:', latestError);
@@ -124,18 +131,13 @@ export function useInventory(moduleType: 'pharmacy' | 'inventory' | 'all' = 'all
     }
   }, []);
 
-  // Fetch 30-day snapshot history for overall charts
+  // Fetch 1-year snapshot history (weekly aggregate for fast load, ~52 points)
   const fetchSnapshotHistory = useCallback(async () => {
     setIsLoadingSnapshotHistory(true);
     try {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const cutoffDate = thirtyDaysAgo.toISOString().split('T')[0];
-
       const { data, error } = await supabase
-        .from('fdc_inventory_daily_value')
+        .from('fdc_inventory_weekly_value')
         .select('snapshot_date, total_stock, total_value')
-        .gte('snapshot_date', cutoffDate)
         .eq('module_type', moduleType === 'pharmacy' ? 'pharmacy' : 'inventory')
         .order('snapshot_date', { ascending: true });
 
@@ -144,13 +146,11 @@ export function useInventory(moduleType: 'pharmacy' | 'inventory' | 'all' = 'all
       }
 
       if (data && data.length > 0) {
-        const result = data
-          .map((row: any) => ({
-            date: row.snapshot_date,
-            totalStock: Number(row.total_stock) || 0,
-            totalValue: Number(row.total_value) || 0,
-          }))
-          .slice(-30); // safety cap
+        const result = data.map((row: any) => ({
+          date: row.snapshot_date,
+          totalStock: Number(row.total_stock) || 0,
+          totalValue: Number(row.total_value) || 0,
+        }));
         setSnapshotHistory(result);
       } else {
         setSnapshotHistory([]);
@@ -284,16 +284,37 @@ export function useInventory(moduleType: 'pharmacy' | 'inventory' | 'all' = 'all
     return inventory.reduce((sum, item) => sum + item.currentStock * (item.unitPrice || 0), 0);
   }, [inventory]);
 
-  // Top 10 items by value
+  // Top 10 items by value (grouped by normalized name to avoid variants like hyphen/spacing)
   const topMaterials: TopMaterial[] = useMemo(() => {
-    return inventory
-      .map(item => ({
-        materialId: item.sku,
-        name: item.name,
-        value: item.currentStock * (item.unitPrice || 0),
-        unit: item.unit,
-        stock: item.currentStock,
-      }))
+    const byName = new Map<string, TopMaterial>();
+
+    const normalizeName = (name: string) =>
+      name
+        .replace(/[-–]/g, " ") // treat hyphen like space
+        .replace(/\s+/g, " ")  // collapse spaces
+        .trim()
+        .toLowerCase();
+
+    inventory.forEach(item => {
+      const key = normalizeName(item.name);
+      const value = item.currentStock * (item.unitPrice || 0);
+      const existing = byName.get(key);
+
+      if (existing) {
+        existing.value += value;
+        existing.stock += item.currentStock;
+      } else {
+        byName.set(key, {
+          materialId: item.sku,
+          name: item.name,
+          value,
+          unit: item.unit,
+          stock: item.currentStock,
+        });
+      }
+    });
+
+    return Array.from(byName.values())
       .sort((a, b) => b.value - a.value)
       .slice(0, 10);
   }, [inventory]);

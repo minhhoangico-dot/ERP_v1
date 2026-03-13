@@ -87,6 +87,8 @@ export interface SupplyChartPoint {
   consumption: number;
   consumptionLY: number;
   patientVolume: number;
+  consumptionQty: number;
+  consumptionPerVisit: number;
 }
 
 // Supply consumption types
