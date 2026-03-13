@@ -18,40 +18,22 @@ export async function syncMisaSuppliesJob() {
 
         const request = new sql.Request(misaPool);
 
-        // Fetch current stock balance (Opening Balance + Inward - Outward)
+        // Fetch current stock balance using full InventoryLedger history only
+        // This matches MISA's Sổ chi tiết logic and avoids double-counting
+        // opening balances from OpeningInventoryEntry.
         const result = await request.query(`
             SELECT 
                 i.InventoryItemCode,
                 MAX(i.InventoryItemName) as InventoryItemName,
                 MAX(i.InventoryAccount) as InventoryAccount,
                 MAX(CAST(i.UnitID AS VARCHAR(36))) as UnitID,
-                SUM(ISNULL(t.InQuantity, 0)) - SUM(ISNULL(t.OutQuantity, 0)) as balance,
-                SUM(ISNULL(t.InAmount, 0)) - SUM(ISNULL(t.OutAmount, 0)) as total_value
+                SUM(ISNULL(l.InwardQuantity, 0)) - SUM(ISNULL(l.OutwardQuantity, 0)) as balance,
+                SUM(ISNULL(l.InwardAmount, 0)) - SUM(ISNULL(l.OutwardAmount, 0)) as total_value
             FROM InventoryItem i
-            JOIN (
-                -- Opening Balance
-                SELECT 
-                    InventoryItemID,
-                    Quantity as InQuantity,
-                    0 as OutQuantity,
-                    Amount as InAmount,
-                    0 as OutAmount
-                FROM OpeningInventoryEntry
-                
-                UNION ALL
-                
-                -- Ledger Transactions
-                SELECT 
-                    InventoryItemID,
-                    InwardQuantity as InQuantity,
-                    OutwardQuantity as OutQuantity,
-                    InwardAmount as InAmount,
-                    OutwardAmount as OutAmount
-                FROM InventoryLedger
-            ) t ON i.InventoryItemID = t.InventoryItemID
+            LEFT JOIN InventoryLedger l ON i.InventoryItemID = l.InventoryItemID
             WHERE i.InventoryAccount LIKE '152%'
             GROUP BY i.InventoryItemCode
-            HAVING SUM(ISNULL(t.InQuantity, 0)) - SUM(ISNULL(t.OutQuantity, 0)) > 0
+            HAVING SUM(ISNULL(l.InwardQuantity, 0)) - SUM(ISNULL(l.OutwardQuantity, 0)) > 0
         `);
 
         const supplies = result.recordset;

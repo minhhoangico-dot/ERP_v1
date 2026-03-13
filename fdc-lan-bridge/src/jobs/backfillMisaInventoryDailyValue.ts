@@ -33,15 +33,16 @@ export async function backfillMisaInventoryDailyValueJob(days = 365) {
     request.input("endDate", sql.Date, endDateStr);
 
     // Compute daily end-of-day totals for all inventory accounts 152%
-    // Uses OpeningInventoryEntry as base + running sum of daily ledger deltas.
+    // Uses InventoryLedger only (no OpeningInventoryEntry) to match MISA reports.
     const result = await request.query(`
       WITH base AS (
         SELECT
-          SUM(ISNULL(oe.Quantity, 0)) AS base_qty,
-          SUM(ISNULL(oe.Amount, 0)) AS base_amt
-        FROM OpeningInventoryEntry oe
-        JOIN InventoryItem i ON i.InventoryItemID = oe.InventoryItemID
+          SUM(ISNULL(l.InwardQuantity, 0) - ISNULL(l.OutwardQuantity, 0)) AS base_qty,
+          SUM(ISNULL(l.InwardAmount, 0) - ISNULL(l.OutwardAmount, 0)) AS base_amt
+        FROM InventoryLedger l
+        JOIN InventoryItem i ON i.InventoryItemID = l.InventoryItemID
         WHERE i.InventoryAccount LIKE '152%'
+          AND l.RefDate < @startDate
       ),
       daily AS (
         SELECT
