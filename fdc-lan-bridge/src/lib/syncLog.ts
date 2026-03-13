@@ -10,6 +10,7 @@ export type SyncType =
     | "syncMisaSupplies"
     | "syncSupplyConsumption"
     | "syncSupplyMonthlyStats"
+    | "backfillMisaInventoryDailyValue"
     | "syncAttendance";
 
 export type SyncStatus = "completed" | "failed";
